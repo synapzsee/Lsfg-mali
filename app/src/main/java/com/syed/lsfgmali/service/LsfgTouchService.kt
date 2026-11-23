@@ -34,6 +34,11 @@ class LsfgTouchService : AccessibilityService() {
         super.onDestroy()
     }
 
+    /** Timestamp of the last gesture the system actually ran. */
+    @Volatile
+    var lastGestureAt: Long = 0L
+        private set
+
     fun send(gesture: GestureDescription): Boolean = runCatching {
         pending = gesture
         if (inFlight) true else dispatchPending()
@@ -78,11 +83,6 @@ class LsfgTouchService : AccessibilityService() {
 
         @Volatile
         private var inFlight = false
-
-        /** Timestamp of the last gesture the system actually ran. */
-        @Volatile
-        var lastGestureAt: Long = 0L
-            private set
 
         val isReady: Boolean get() = instance != null
     }
