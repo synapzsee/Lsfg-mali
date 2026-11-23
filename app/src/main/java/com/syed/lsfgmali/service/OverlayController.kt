@@ -91,7 +91,25 @@ class OverlayController(
     fun onGeometryChanged(w: Int, h: Int) {
         captureW = w
         captureH = h
+        clampBubble()
         rebindOutputSurface()
+    }
+
+    /** Keeps the bubble on screen after a rotation or a density change. */
+    private fun clampBubble() {
+        val view = bubble ?: return
+        val params = view.layoutParams as? WindowManager.LayoutParams ?: return
+        val metrics = service.resources.displayMetrics
+        val size = view.width.takeIf { it > 0 } ?: dp(52)
+        val maxX = (metrics.widthPixels - size).coerceAtLeast(0)
+        val maxY = (metrics.heightPixels - size).coerceAtLeast(0)
+        val x = params.x.coerceIn(0, maxX)
+        val y = params.y.coerceIn(0, maxY)
+        if (x == params.x && y == params.y) return
+        params.x = x
+        params.y = y
+        runCatching { windowManager.updateViewLayout(view, params) }
+        LogBus.log("bubble moved back on screen: ${params.x},${params.y}")
     }
 
     fun rebindOutputSurface() {

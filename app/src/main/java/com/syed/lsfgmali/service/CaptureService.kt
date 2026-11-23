@@ -69,6 +69,7 @@ class CaptureService : Service() {
     private var lastUnique = -1L
     private var lastAdvance = 0L
     private var sessionStartedAt = 0L
+    private var initRetried = false
 
     private var statsUnique = 0L
     private var statsPosted = 0L
@@ -162,6 +163,7 @@ class CaptureService : Service() {
             return
         }
         config = cfg
+        initRetried = false
         sessionStartedAt = SystemClock.elapsedRealtime()
         multiplier = cfg.multiplier
         bypass = false
@@ -188,9 +190,11 @@ class CaptureService : Service() {
         }
 
         val manager = getSystemService(MediaProjectionManager::class.java)
-        val p = runCatching { manager.getMediaProjection(resultCode, data) }.getOrNull()
+        val projectionResult = runCatching { manager.getMediaProjection(resultCode, data) }
+        val p = projectionResult.getOrNull()
         if (p == null) {
-            fail("Screen-capture permission was denied")
+            val reason = projectionResult.exceptionOrNull()?.message ?: "no projection"
+            fail("Screen-capture permission was refused ($reason) — start the session again")
             return
         }
         projection = p
@@ -418,29 +422,12 @@ class CaptureService : Service() {
         val cache = Paths.shaderCache(this)
         val fp16 = config.fp16 && runCatching { NativeBridge.isFramegenFp16Supported(cache) }.getOrDefault(false)
         nativeFp16 = fp16
-        val rc = runCatching {
-            NativeBridge.initContext(
-                cache,
-                captureW,
-                captureH,
-                multiplier,
-                config.flow,
-                config.performance,
-                config.hdr,
-                config.antiArtifacts,
-                fp16,
-                false, 0, 0, 0f, 0f, 0f, false,
-                false, 0, 0f, 0f, 0f, 0f,
-                false, 0, 0, 0f, 0f, 0f,
-                config.targetCap,
-                config.emaAlpha,
-                config.outlierRatio,
-                config.vsyncSlackMs,
-                config.queueDepth,
-            )
-        }.getOrElse {
-            LogBus.log("initContext threw: ${it.message}")
-            -999
+        var rc = initContextCall(cache, fp16, config.performance, config.targetCap, config.queueDepth)
+        if (rc != 0 && !initRetried) {
+            initRetried = true
+            LogBus.log("engine init failed rc=$rc — retrying with the conservative profile")
+            runCatching { NativeBridge.destroyContext() }
+            rc = initContextCall(cache, fp16, true, 0, 1)
         }
         if (rc == 0) {
             LogBus.log(
@@ -451,6 +438,37 @@ class CaptureService : Service() {
             LogBus.log("initContext failed rc=$rc")
         }
         return rc
+    }
+
+    private fun initContextCall(
+        cache: String,
+        fp16: Boolean,
+        performance: Boolean,
+        targetCap: Int,
+        queueDepth: Int,
+    ): Int = runCatching {
+        NativeBridge.initContext(
+            cache,
+            captureW,
+            captureH,
+            multiplier,
+            config.flow,
+            performance,
+            config.hdr,
+            config.antiArtifacts,
+            fp16,
+            false, 0, 0, 0f, 0f, 0f, false,
+            false, 0, 0f, 0f, 0f, 0f,
+            false, 0, 0, 0f, 0f, 0f,
+            targetCap,
+            config.emaAlpha,
+            config.outlierRatio,
+            config.vsyncSlackMs,
+            queueDepth,
+        )
+    }.getOrElse {
+        LogBus.log("initContext threw: ${it.message}")
+        -999
     }
 
     private fun createReader(width: Int, height: Int, handler: Handler): ImageReader {
