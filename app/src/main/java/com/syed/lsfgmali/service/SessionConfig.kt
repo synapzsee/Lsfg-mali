@@ -82,7 +82,11 @@ data class SessionConfig(
             fp16 = fp16 && s.fp16Auto,
             touchBridge = s.touchBridge,
             showBubble = s.showBubble,
-            queueDepth = if (s.captureScale == CaptureScale.PERFORMANCE) 2 else 3,
+            queueDepth = when (s.captureScale) {
+                CaptureScale.PERFORMANCE -> 2
+                CaptureScale.BALANCED -> 3
+                CaptureScale.FULL -> 4
+            },
         )
     }
 }

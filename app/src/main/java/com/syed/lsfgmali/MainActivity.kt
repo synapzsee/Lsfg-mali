@@ -74,9 +74,7 @@ class MainActivity : ComponentActivity() {
                     },
                     onOpenOverlaySettings = { requestOverlay() },
                     onOpenNotificationSettings = { openNotificationSettings() },
-                    onOpenBatterySettings = {
-                        openSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                    },
+                    onOpenBatterySettings = { requestBatteryExemption() },
                 )
             }
         }
@@ -129,6 +127,15 @@ class MainActivity : ComponentActivity() {
         )
         runCatching { overlayPermissionLauncher.launch(intent) }
             .onFailure { openSettings(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)) }
+    }
+
+    private fun requestBatteryExemption() {
+        val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+            .setData(Uri.parse("package:$packageName"))
+        val launched = runCatching { startActivity(direct) }.isSuccess
+        if (!launched) {
+            openSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
     }
 
     private fun openNotificationSettings() {

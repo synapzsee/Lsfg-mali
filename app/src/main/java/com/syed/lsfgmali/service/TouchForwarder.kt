@@ -18,6 +18,7 @@ class TouchForwarder(private val onFailure: (String) -> Unit) {
     private val active = HashMap<Int, GestureDescription.StrokeDescription>()
     private var lastDispatch = 0L
     private var disabled = false
+    private var consecutiveFailures = 0
 
     fun reset() {
         lastPoint.clear()
@@ -113,11 +114,17 @@ class TouchForwarder(private val onFailure: (String) -> Unit) {
         active.values.forEach { builder.addStroke(it) }
         lastDispatch = SystemClock.uptimeMillis()
         if (!service.send(builder.build())) {
-            disabled = true
-            reset()
-            LogBus.log("Touch bridge dispatch failed — falling back to native pass-through")
-            onFailure("Touch bridge failed; disable it in Settings")
+            consecutiveFailures++
+            LogBus.log("Touch bridge dispatch failed (${consecutiveFailures}) — retrying")
+            if (consecutiveFailures >= 5) {
+                disabled = true
+                reset()
+                LogBus.log("Touch bridge disabled after repeated dispatch failures — falling back to native pass-through")
+                onFailure("Touch bridge failed; disable it in Settings")
+            }
+            return
         }
+        consecutiveFailures = 0
         active.keys.toList().forEach { id ->
             if (active[id]?.willContinue() != true) active.remove(id)
         }
