@@ -33,6 +33,8 @@ data class Settings(
     val dllName: String? = null,
     val dllReady: Boolean = false,
     val dllSha: String? = null,
+    val dllVersion: String? = null,
+    val dllFp16: Boolean = false,
     val bubbleX: Int = -1,
     val bubbleY: Int = 300,
 )
@@ -68,6 +70,8 @@ class SettingsStore private constructor(context: Context) {
             dllName = prefs.getString("dll_name", null),
             dllReady = prefs.getBoolean("dll_ready", false),
             dllSha = prefs.getString("dll_sha", null),
+            dllVersion = prefs.getString("dll_version", null),
+            dllFp16 = prefs.getBoolean("dll_fp16", false),
             bubbleX = prefs.getInt("bubble_x", def.bubbleX),
             bubbleY = prefs.getInt("bubble_y", def.bubbleY),
         )
@@ -95,6 +99,8 @@ class SettingsStore private constructor(context: Context) {
             .putString("dll_name", next.dllName)
             .putBoolean("dll_ready", next.dllReady)
             .putString("dll_sha", next.dllSha)
+            .putString("dll_version", next.dllVersion)
+            .putBoolean("dll_fp16", next.dllFp16)
             .putInt("bubble_x", next.bubbleX)
             .putInt("bubble_y", next.bubbleY)
             .apply()
@@ -102,8 +108,14 @@ class SettingsStore private constructor(context: Context) {
         return next
     }
 
-    fun setDll(name: String?, sha: String?, ready: Boolean) = update {
-        it.copy(dllName = name, dllSha = sha, dllReady = ready)
+    fun setDll(name: String?, sha: String?, ready: Boolean, version: String? = null, fp16: Boolean = false) = update {
+        it.copy(
+            dllName = name,
+            dllSha = sha,
+            dllReady = ready,
+            dllVersion = version,
+            dllFp16 = fp16,
+        )
     }
 
     fun applyG85Profile() = update {

@@ -87,6 +87,7 @@ import com.lsfg.android.session.NativeBridge
 import com.syed.lsfgmali.BuildConfig
 import com.syed.lsfgmali.data.CaptureScale
 import com.syed.lsfgmali.data.DeviceInfo
+import com.syed.lsfgmali.data.DllVersion
 import com.syed.lsfgmali.data.DriverMode
 import com.syed.lsfgmali.data.EngineState
 import com.syed.lsfgmali.data.FpsMode
@@ -151,11 +152,17 @@ fun LsfgApp(
             val imported = withContext(Dispatchers.IO) { importDll(context, uri) }
             importing = false
             if (imported != null) {
-                store.setDll(imported.first, imported.second, true)
-                snackbar.showSnackbar("Lossless.dll imported and shaders extracted")
+                store.setDll(imported.name, imported.sha, true, imported.version, imported.fp16)
+                val version = imported.version?.let { " $it" } ?: ""
+                val path = if (imported.fp16) {
+                    "FP16 shader set available"
+                } else {
+                    "FP32 path (FP16 needs DLL ≥ 3.2.2.0)"
+                }
+                snackbar.showSnackbar("Lossless.dll$version imported — $path")
             } else {
                 store.setDll(null, null, false)
-                snackbar.showSnackbar("Import failed — pick a genuine Lossless.dll")
+                snackbar.showSnackbar("Import failed — see log for the exact reason")
             }
         }
     }
@@ -214,6 +221,8 @@ fun LsfgApp(
                 SetupCard(
                     dllName = settings.dllName,
                     dllSha = settings.dllSha,
+                    dllVersion = settings.dllVersion,
+                    dllFp16 = settings.dllFp16,
                     importing = importing,
                     onPick = { dllPicker.launch(arrayOf("*/*")) },
                 )
@@ -368,6 +377,8 @@ private fun LiveCard(engine: com.syed.lsfgmali.data.EngineSnapshot) {
 private fun SetupCard(
     dllName: String?,
     dllSha: String?,
+    dllVersion: String?,
+    dllFp16: Boolean,
     importing: Boolean,
     onPick: () -> Unit,
 ) {
@@ -380,9 +391,17 @@ private fun SetupCard(
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(dllName ?: "No DLL imported", fontWeight = FontWeight.Medium)
                 Text(
-                    dllSha?.let { "SHA-256 ${it.take(16)}…" } ?: "Needs Lossless.dll ≥ 3.2.2.0 for FP16",
+                    dllName?.let { name -> dllVersion?.let { "$name ($it)" } ?: name } ?: "No DLL imported",
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    when {
+                        dllSha == null ->
+                            "Any version works — 3.2.2.0+ only adds the optional FP16 shader set"
+                        dllFp16 -> "FP16 shader set available · SHA-256 ${dllSha.take(16)}…"
+                        else -> "FP32 shader set · SHA-256 ${dllSha.take(16)}… · FP16 needs DLL ≥ 3.2.2.0"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -810,21 +829,36 @@ private fun notificationsAllowed(context: Context): Boolean =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-private fun importDll(context: Context, uri: Uri): Pair<String, String>? = runCatching {
+private data class DllImport(
+    val name: String,
+    val sha: String,
+    val version: String?,
+    val fp16: Boolean,
+    val probeRc: Int,
+)
+
+private fun importDll(context: Context, uri: Uri): DllImport? = runCatching {
     val destination = Paths.dllCopy(context)
     val input = context.contentResolver.openInputStream(uri) ?: error("Cannot open the selected file")
     input.use { src ->
         destination.outputStream().use { dst -> src.copyTo(dst) }
     }
     val sha = Hash.sha256(destination)
+    val version = DllVersion.detect(destination)
     val cache = Paths.shaderCache(context)
     val extracted = NativeBridge.extractShaders(destination.absolutePath, sha, cache)
     if (extracted != 0) error("extractShaders rc=$extracted")
     val probe = NativeBridge.probeShaders(cache)
-    if (probe != 0) error("probeShaders rc=$probe")
+    if (probe != 0) {
+        LogBus.log("probeShaders rc=$probe — the driver rejected a shader variant; frame generation still runs on the FP32 path")
+    }
+    val fp16 = runCatching { NativeBridge.isFramegenFp16Supported(cache) }.getOrDefault(false)
     val name = displayName(context, uri) ?: destination.name
-    LogBus.log("Lossless.dll imported: $name sha=${sha.take(12)}… extract=$extracted probe=$probe")
-    name to sha
+    LogBus.log(
+        "Lossless.dll imported: $name${version?.let { " ($it)" } ?: ""} sha=${sha.take(12)}… " +
+            "extract=$extracted probe=$probe fp16=$fp16",
+    )
+    DllImport(name, sha, version, fp16, probe)
 }.getOrElse {
     LogBus.log("Lossless.dll import failed: ${it.message}")
     null
