@@ -19,10 +19,12 @@ class TouchForwarder(private val onFailure: (String) -> Unit) {
     private var lastDispatch = 0L
     private var disabled = false
     private var consecutiveFailures = 0
+    private var lastDispatchAt = 0L
 
     fun reset() {
         lastPoint.clear()
         active.clear()
+        lastDispatchAt = 0L
     }
 
     fun onTouch(view: View, event: MotionEvent): Boolean {
@@ -73,6 +75,27 @@ class TouchForwarder(private val onFailure: (String) -> Unit) {
         return true
     }
 
+    /**
+     * The bridge window swallows every touch, so a gesture stream that the
+     * system silently refuses would leave the game unplayable. If gestures were
+     * dispatched but none ever completed, give up and fall back to native
+     * pass-through.
+     */
+    private fun checkStalled(service: LsfgTouchService) {
+        if (lastDispatchAt == 0L) return
+        val now = SystemClock.uptimeMillis()
+        if (now - lastDispatchAt < STALL_TIMEOUT_MS) return
+        val completed = service.lastGestureAt
+        if (completed >= lastDispatchAt) return
+        disabled = true
+        reset()
+        LogBus.log(
+            "Touch bridge produced no completed gesture for ${STALL_TIMEOUT_MS} ms — " +
+                "disabling it so touches reach the game again",
+        )
+        onFailure("Touch bridge stalled; disable it in Settings")
+    }
+
     private fun addPointer(id: Int, x: Float, y: Float) {
         val path = Path().apply { moveTo(x, y) }
         val stroke = GestureDescription.StrokeDescription(path, 0L, 1L, true)
@@ -110,6 +133,7 @@ class TouchForwarder(private val onFailure: (String) -> Unit) {
     private fun dispatch() {
         if (active.isEmpty()) return
         val service = LsfgTouchService.instance ?: return
+        checkStalled(service)
         val builder = GestureDescription.Builder()
         active.values.forEach { builder.addStroke(it) }
         lastDispatch = SystemClock.uptimeMillis()
@@ -125,8 +149,13 @@ class TouchForwarder(private val onFailure: (String) -> Unit) {
             return
         }
         consecutiveFailures = 0
+        lastDispatchAt = SystemClock.uptimeMillis()
         active.keys.toList().forEach { id ->
             if (active[id]?.willContinue() != true) active.remove(id)
         }
+    }
+
+    private companion object {
+        const val STALL_TIMEOUT_MS = 3000L
     }
 }

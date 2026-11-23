@@ -2,6 +2,7 @@ package com.syed.lsfgmali.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import com.syed.lsfgmali.data.LogBus
 
@@ -47,11 +48,13 @@ class LsfgTouchService : AccessibilityService() {
                 object : GestureResultCallback() {
                     override fun onCompleted(description: GestureDescription?) {
                         inFlight = false
+                        lastGestureAt = SystemClock.uptimeMillis()
                         dispatchPending()
                     }
 
                     override fun onCancelled(description: GestureDescription?) {
                         inFlight = false
+                        lastGestureAt = SystemClock.uptimeMillis()
                         dispatchPending()
                     }
                 },
@@ -75,6 +78,11 @@ class LsfgTouchService : AccessibilityService() {
 
         @Volatile
         private var inFlight = false
+
+        /** Timestamp of the last gesture the system actually ran. */
+        @Volatile
+        var lastGestureAt: Long = 0L
+            private set
 
         val isReady: Boolean get() = instance != null
     }

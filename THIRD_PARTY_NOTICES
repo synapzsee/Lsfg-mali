@@ -1,0 +1,86 @@
+LSFG Mali 2.0 — third-party notices
+===================================
+
+This application is a shell around third-party components. Their licences apply
+to the corresponding parts of the distributed APK.
+
+
+1. The application shell (Kotlin, resources, Gradle build)
+----------------------------------------------------------
+Copyright (C) 2024-2026 the LSFG Mali contributors
+Copyright (C) 2024 Syed Hassan and the original LSFG-Android-Application authors
+(https://github.com/FrankBarretta/LSFG-Android-Application)
+
+Licensed under the GNU General Public License, version 3. The full text is in
+the LICENSE file next to this notice.
+
+The original LSFG-for-Mali shell by Syed Hassan is GPL-3.0; this rewrite keeps
+the same licence and credits the original work.
+
+
+2. lsfg-vk / LSFG-Android frame-generation engine
+---------------------------------------------------
+liblsfg-android.so — the lsfg-vk frame-generation engine, as adapted for Android
+by the LSFG-Android project.
+
+    lsfg-vk            — MIT License
+    LSFG-Android fork  — MIT License
+
+The MIT licence text follows.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+
+3. PanVK (Panfrost Vulkan driver)
+-----------------------------------
+libvulkan_panfrost.so — the Panfrost Vulkan driver, bundled as an in-app ICD so
+that no root is needed.
+
+    PanVK / Panfrost   — MIT License
+
+The MIT licence text above applies. PanVK is a project of the Panfrost project;
+see https://github.com/panfrost/PanVK for the full licence and source.
+
+
+4. libc++_shared.so
+---------------------
+LLVM's libc++, Apache License 2.0 with LLVM Exceptions, shipped by the engine
+build. See https://llvm.org/LICENSE.txt for the full text.
+
+
+5. Lossless Scaling — Lossless.dll
+------------------------------------
+Lossless.dll is **not** bundled with, downloaded by, or redistributed with this
+application. It is a proprietary binary owned by Lossless Scaling GmbH; you must
+supply your own licensed copy through the app's Import action, and it is stored
+only in the app's private storage.
+
+The application only reads the shader resources embedded in the file you
+import, to extract them for the frame-generation engine. No part of Lossless
+Scaling is redistributed here.
+
+Lossless Scaling is a trademark of Lossless Scaling GmbH. This project is not
+affiliated with or endorsed by Lossless Scaling.
+
+
+6. Lossless Scaling trademark and the "LSFG" name
+--------------------------------------------------
+"Lossless Scaling" and "LSFG" are trademarks of Lossless Scaling GmbH. This is
+an unofficial, community shell. Use of these names here is descriptive only and
+implies no endorsement.
