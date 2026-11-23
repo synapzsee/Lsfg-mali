@@ -27,6 +27,7 @@ import android.view.WindowManager
 import com.lsfg.android.session.NativeBridge
 import com.syed.lsfgmali.MainActivity
 import com.syed.lsfgmali.R
+import com.syed.lsfgmali.data.CaptureScale
 import com.syed.lsfgmali.data.EngineState
 import com.syed.lsfgmali.data.ForegroundState
 import com.syed.lsfgmali.data.FpsMode
@@ -66,6 +67,7 @@ class CaptureService : Service() {
     private var bypass = false
     private var nativeFp16 = false
     private var mirrorMode = false
+    private var manualMultiplier = false
 
     private var lastUnique = -1L
     private var lastAdvance = 0L
@@ -152,6 +154,14 @@ class CaptureService : Service() {
                 val show = intent.getBooleanExtra(EXTRA_BUBBLE, true)
                 config = config.copy(showBubble = show)
                 overlay?.setBubbleVisible(show)
+            }
+            ACTION_SET_SCALE -> {
+                val name = intent.getStringExtra(EXTRA_SCALE) ?: return START_NOT_STICKY
+                applyCaptureScale(name)
+            }
+            ACTION_SET_MULTIPLIER -> {
+                val value = intent.getIntExtra(EXTRA_MULTIPLIER, config.multiplier)
+                applyMultiplier(value)
             }
             null -> if (!sessionActive) stopSelf()
         }
@@ -299,6 +309,7 @@ class CaptureService : Service() {
                 error = null,
                 captureW = captureW,
                 captureH = captureH,
+                captureScale = config.scale,
                 multiplier = multiplier,
                 targetFps = config.targetCap,
                 fp16 = nativeFp16,
@@ -407,6 +418,7 @@ class CaptureService : Service() {
     }
 
     private fun maybeAdaptMultiplier() {
+        if (manualMultiplier) return
         if (config.fpsMode != FpsMode.TARGET || !config.adaptive || starved) return
         if (multiplierChanges >= 3 || sourceFps < 20.0) return
         val needed = ceil(config.targetFps / sourceFps).toInt().coerceIn(2, 6)
@@ -609,7 +621,7 @@ class CaptureService : Service() {
         reconfiguring = true
         contextReady = false
         LogBus.log(
-            "rotation change ($source): ${rotationName(currentRotation)} -> ${rotationName(rotation)}, " +
+            "capture reconfigure ($source): ${rotationName(currentRotation)} -> ${rotationName(rotation)}, " +
                 "capture ${captureW}x$captureH -> ${newW}x$newH (overlay stays attached)",
         )
         val oldVd = virtualDisplay
@@ -678,7 +690,7 @@ class CaptureService : Service() {
         EngineState.update {
             it.copy(captureW = captureW, captureH = captureH, phase = SessionPhase.RUNNING, starved = false)
         }
-        LogBus.log("rotation reconfigure complete: ${captureW}x$captureH overlay still attached")
+        LogBus.log("reconfigure complete: ${captureW}x$captureH overlay still attached")
     }
 
     private fun registerDisplayListener() {
@@ -786,6 +798,38 @@ class CaptureService : Service() {
         updateNotification()
     }
 
+    /** Switches the capture resolution while the session keeps running. */
+    private fun applyCaptureScale(name: String) {
+        val scale = runCatching { CaptureScale.valueOf(name) }.getOrNull()
+        if (scale == null) {
+            LogBus.log("unknown capture scale '$name'")
+            return
+        }
+        if (scale.value == config.scale) return
+        config = config.copy(scale = scale.value)
+        SettingsStore.get(this).update { it.copy(captureScale = scale) }
+        EngineState.update { it.copy(captureScale = scale.value) }
+        LogBus.log("capture scale changed live -> ${scale.label}")
+        val (w, h, rotation) = computeGeometry()
+        if (w == captureW && h == captureH) {
+            LogBus.log("capture size unchanged at ${w}x$h — nothing to reconfigure")
+            updateNotification()
+            return
+        }
+        reconfigure(w, h, rotation, "capture scale change")
+    }
+
+    /** Sets the internal multiplier by hand and stops the adaptive logic from fighting it. */
+    private fun applyMultiplier(value: Int) {
+        val wanted = value.coerceIn(2, 8)
+        if (wanted == multiplier) return
+        manualMultiplier = true
+        config = config.copy(multiplier = wanted)
+        SettingsStore.get(this).update { it.copy(multiplier = wanted) }
+        LogBus.log("multiplier changed live -> ${wanted}x")
+        restartEngineAt(wanted)
+    }
+
     private fun applyBypass(enabled: Boolean) {
         bypass = enabled
         overlay?.setBypass(enabled)
@@ -807,6 +851,14 @@ class CaptureService : Service() {
 
         override fun onTargetFps(fps: Int) {
             applyTargetFps(fps)
+        }
+
+        override fun onScaleChange(scale: CaptureScale) {
+            applyCaptureScale(scale.name)
+        }
+
+        override fun onMultiplierChange(multiplier: Int) {
+            applyMultiplier(multiplier)
         }
 
         override fun onOpenApp() {
@@ -944,12 +996,16 @@ class CaptureService : Service() {
         const val ACTION_UPDATE_TARGET = "com.syed.lsfgmali.action.UPDATE_TARGET"
         const val ACTION_SET_BYPASS = "com.syed.lsfgmali.action.SET_BYPASS"
         const val ACTION_SET_BUBBLE = "com.syed.lsfgmali.action.SET_BUBBLE"
+        const val ACTION_SET_SCALE = "com.syed.lsfgmali.action.SET_SCALE"
+        const val ACTION_SET_MULTIPLIER = "com.syed.lsfgmali.action.SET_MULTIPLIER"
 
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         const val EXTRA_TARGET_FPS = "target_fps"
         const val EXTRA_BYPASS = "bypass"
         const val EXTRA_BUBBLE = "bubble"
+        const val EXTRA_SCALE = "capture_scale"
+        const val EXTRA_MULTIPLIER = "multiplier"
 
         fun start(context: Context, resultCode: Int, data: Intent, config: SessionConfig) {
             val intent = Intent(context, CaptureService::class.java).setAction(ACTION_START)
@@ -987,6 +1043,26 @@ class CaptureService : Service() {
                     .setAction(ACTION_SET_BUBBLE)
                     .putExtra(EXTRA_BUBBLE, show),
             )
+        }
+
+        fun setCaptureScale(context: Context, scale: CaptureScale) {
+            runCatching {
+                context.startService(
+                    Intent(context, CaptureService::class.java)
+                        .setAction(ACTION_SET_SCALE)
+                        .putExtra(EXTRA_SCALE, scale.name),
+                )
+            }.onFailure { LogBus.log("could not change the capture scale: ${it.message}") }
+        }
+
+        fun setMultiplier(context: Context, multiplier: Int) {
+            runCatching {
+                context.startService(
+                    Intent(context, CaptureService::class.java)
+                        .setAction(ACTION_SET_MULTIPLIER)
+                        .putExtra(EXTRA_MULTIPLIER, multiplier),
+                )
+            }.onFailure { LogBus.log("could not change the multiplier: ${it.message}") }
         }
     }
 }

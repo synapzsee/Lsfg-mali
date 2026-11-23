@@ -26,6 +26,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import com.lsfg.android.session.NativeBridge
 import com.syed.lsfgmali.R
+import com.syed.lsfgmali.data.CaptureScale
 import com.syed.lsfgmali.data.ForegroundState
 import com.syed.lsfgmali.data.LogBus
 import com.syed.lsfgmali.data.SettingsStore
@@ -48,6 +49,8 @@ class OverlayController(
         fun onStop()
         fun onBypassChange(enabled: Boolean)
         fun onTargetFps(fps: Int)
+        fun onScaleChange(scale: CaptureScale)
+        fun onMultiplierChange(multiplier: Int)
         fun onOpenApp()
         fun onTouchBridgeFailure(message: String)
     }
@@ -365,6 +368,8 @@ class OverlayController(
                         callbacks.onBypassChange(it)
                     },
                     onTarget = { callbacks.onTargetFps(it) },
+                    onScale = { callbacks.onScaleChange(it) },
+                    onMultiplier = { callbacks.onMultiplierChange(it) },
                     onStop = { callbacks.onStop() },
                     onOpenApp = { callbacks.onOpenApp() },
                     onClose = { hidePanel() },

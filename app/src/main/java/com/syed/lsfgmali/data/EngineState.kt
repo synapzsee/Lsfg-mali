@@ -16,6 +16,7 @@ data class EngineSnapshot(
     val driver: String = "PanVK",
     val captureW: Int = 0,
     val captureH: Int = 0,
+    val captureScale: Float = 1f,
     val multiplier: Int = 2,
     val targetFps: Int = 0,
     val fp16: Boolean = false,

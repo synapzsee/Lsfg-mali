@@ -39,10 +39,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.syed.lsfgmali.data.CaptureScale
 import com.syed.lsfgmali.data.EngineState
 import com.syed.lsfgmali.data.EngineSnapshot
 import com.syed.lsfgmali.data.SessionPhase
-import com.syed.lsfgmali.service.CaptureService
 import com.syed.lsfgmali.ui.theme.LsfgTheme
 
 @Composable
@@ -51,19 +51,21 @@ fun OverlayPanel(
     bypass: Boolean,
     onBypass: (Boolean) -> Unit,
     onTarget: (Int) -> Unit,
+    onScale: (CaptureScale) -> Unit,
+    onMultiplier: (Int) -> Unit,
     onStop: () -> Unit,
     onOpenApp: () -> Unit,
     onClose: () -> Unit,
 ) {
     Card(
         modifier = Modifier.width(300.dp),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
     ) {
-        Column(Modifier.padding(18.dp)) {
+        Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     shape = CircleShape,
@@ -79,15 +81,15 @@ fun OverlayPanel(
                 Text(
                     "LSFG Mali",
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,
                     modifier = Modifier.weight(1f),
                 )
-                IconButton(onClick = onClose, modifier = Modifier.size(32.dp)) {
+                IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
                     Icon(Icons.Filled.Close, contentDescription = "Close panel")
                 }
             }
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 when (snapshot.phase) {
                     SessionPhase.RUNNING -> "Generating frames"
@@ -97,20 +99,20 @@ fun OverlayPanel(
                     SessionPhase.ERROR -> snapshot.error ?: "Error"
                     SessionPhase.IDLE -> "Idle"
                 },
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Stat("Output", "%.0f".format(snapshot.outputFps), "fps", Modifier.weight(1f))
                 Stat("Source", "%.0f".format(snapshot.sourceFps), "fps", Modifier.weight(1f))
                 Stat("Latency", "%.0f".format(snapshot.latencyMs), "ms", Modifier.weight(1f))
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Speed, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Filled.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(
                     buildString {
@@ -124,29 +126,61 @@ fun OverlayPanel(
                 Text(snapshot.driver, style = MaterialTheme.typography.labelSmall)
             }
 
-            Spacer(Modifier.height(12.dp))
-            Text("Target FPS", style = MaterialTheme.typography.labelMedium)
-            Spacer(Modifier.height(4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text("FPS", style = MaterialTheme.typography.labelSmall)
                 listOf(30, 45, 60, 90).forEach { fps ->
                     FilterChip(
                         selected = snapshot.targetFps == fps,
                         onClick = { onTarget(fps) },
-                        label = { Text("$fps") },
+                        label = { Text("$fps", fontSize = 11.sp) },
                     )
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(4.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text("×", style = MaterialTheme.typography.labelSmall)
+                listOf(2, 3, 4).forEach { value ->
+                    FilterChip(
+                        selected = snapshot.multiplier == value,
+                        onClick = { onMultiplier(value) },
+                        label = { Text("${value}×", fontSize = 11.sp) },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text("Res", style = MaterialTheme.typography.labelSmall)
+                CaptureScale.entries.forEach { scale ->
+                    FilterChip(
+                        selected = snapshot.captureScale == scale.value,
+                        onClick = { onScale(scale) },
+                        label = { Text(scale.label, fontSize = 11.sp) },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Bypass frame gen", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Text("Bypass frame gen", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 Switch(checked = bypass, onCheckedChange = onBypass)
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onOpenApp, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("App")
                 }
@@ -155,7 +189,7 @@ fun OverlayPanel(
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 ) {
-                    Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Stop")
                 }
@@ -179,6 +213,8 @@ private fun Stat(label: String, value: String, unit: String, modifier: Modifier 
 fun OverlayPanelRoot(
     onBypass: (Boolean) -> Unit,
     onTarget: (Int) -> Unit,
+    onScale: (CaptureScale) -> Unit,
+    onMultiplier: (Int) -> Unit,
     onStop: () -> Unit,
     onOpenApp: () -> Unit,
     onClose: () -> Unit,
@@ -191,6 +227,8 @@ fun OverlayPanelRoot(
                 bypass = snapshot.bypass,
                 onBypass = onBypass,
                 onTarget = onTarget,
+                onScale = onScale,
+                onMultiplier = onMultiplier,
                 onStop = onStop,
                 onOpenApp = onOpenApp,
                 onClose = onClose,
