@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.os.Process
 import androidx.core.content.FileProvider
 import com.syed.lsfgmali.BuildConfig
 import java.io.BufferedReader
@@ -30,7 +29,7 @@ object LogSaver {
     private const val TAG = "logsaver"
 
     private val running = AtomicBoolean(false)
-    private var proc: Process? = null
+    private var proc: java.lang.Process? = null
     private var thread: Thread? = null
     private var current: File? = null
     private var partIndex = 0
@@ -67,7 +66,7 @@ object LogSaver {
     }
 
     private fun pump(ctx: Context) {
-        val pid = Process.myPid()
+        val pid = android.os.Process.myPid()
         val pkg = ctx.packageName
         val process = runCatching {
             ProcessBuilder("logcat", "-v", "threadtime", "-b", "all")
@@ -102,7 +101,7 @@ object LogSaver {
 
     private fun writeHeader(ctx: Context) {
         val device = DeviceInfo.detect(ctx)
-        write("=== LSFGMali session log $sessionStamp part $partIndex (pid ${Process.myPid()}, app ${BuildConfig.VERSION_NAME}) ===")
+        write("=== LSFGMali session log $sessionStamp part $partIndex (pid ${android.os.Process.myPid()}, app ${BuildConfig.VERSION_NAME}) ===")
         write("=== device: ${device.manufacturer} ${device.model} · ${device.soc.ifBlank { "SoC?" }} · GPU ${device.gpuShort} · Android ${device.androidRelease} (SDK ${device.sdkInt}) · ${device.abi} ===")
         write("=== engine native log: ${Paths.nativeLog(ctx)} · crash file: ${Paths.crashFile(ctx)} ===")
     }

@@ -99,6 +99,7 @@ import com.syed.lsfgmali.data.SessionPhase
 import com.syed.lsfgmali.data.SettingsStore
 import com.syed.lsfgmali.service.CaptureService
 import com.syed.lsfgmali.service.LsfgTouchService
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
