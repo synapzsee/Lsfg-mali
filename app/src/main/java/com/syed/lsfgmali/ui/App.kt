@@ -469,6 +469,63 @@ private fun PerformanceCard(
     var target by remember(settings.targetFps) { mutableIntStateOf(settings.targetFps) }
     var flow by remember(settings.flowScale) { mutableStateOf(settings.flowScale) }
     SectionCard(icon = Icons.Filled.Tune, title = "Performance") {
+        Text("Presets", style = MaterialTheme.typography.labelMedium)
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = false,
+                onClick = {
+                    onUpdate {
+                        it.copy(
+                            captureScale = CaptureScale.BALANCED,
+                            flowScale = 0.70f,
+                            fpsMode = FpsMode.TARGET,
+                            targetFps = 60,
+                            multiplier = 2,
+                            adaptive = true,
+                            performance = true,
+                        )
+                    }
+                },
+                label = { Text("Balanced") },
+            )
+            FilterChip(
+                selected = false,
+                onClick = {
+                    onUpdate {
+                        it.copy(
+                            captureScale = CaptureScale.PERFORMANCE,
+                            flowScale = 0.50f,
+                            fpsMode = FpsMode.TARGET,
+                            targetFps = 60,
+                            multiplier = 2,
+                            adaptive = true,
+                            performance = true,
+                        )
+                    }
+                },
+                label = { Text("Battery") },
+            )
+            FilterChip(
+                selected = false,
+                onClick = {
+                    onUpdate {
+                        it.copy(
+                            captureScale = CaptureScale.FULL,
+                            flowScale = 0.85f,
+                            fpsMode = FpsMode.TARGET,
+                            targetFps = 90,
+                            multiplier = 2,
+                            adaptive = true,
+                            performance = false,
+                            hdr = true,
+                        )
+                    }
+                },
+                label = { Text("Max quality") },
+            )
+        }
+        Spacer(Modifier.height(10.dp))
         Text("Capture scale", style = MaterialTheme.typography.labelMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CaptureScale.entries.forEach { scale ->

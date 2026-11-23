@@ -68,6 +68,7 @@ class CaptureService : Service() {
 
     private var lastUnique = -1L
     private var lastAdvance = 0L
+    private var sessionStartedAt = 0L
 
     private var statsUnique = 0L
     private var statsPosted = 0L
@@ -161,6 +162,7 @@ class CaptureService : Service() {
             return
         }
         config = cfg
+        sessionStartedAt = SystemClock.elapsedRealtime()
         multiplier = cfg.multiplier
         bypass = false
         starved = false
@@ -610,6 +612,10 @@ class CaptureService : Service() {
     private fun teardown() {
         if (tornDown) return
         tornDown = true
+        val durationMs = if (sessionStartedAt > 0L) SystemClock.elapsedRealtime() - sessionStartedAt else 0L
+        val generated = runCatching { NativeBridge.getGeneratedFrameCount() }.getOrDefault(0L)
+        val posted = runCatching { NativeBridge.getPostedFrameCount() }.getOrDefault(0L)
+        val unique = runCatching { NativeBridge.getUniqueCaptureCount() }.getOrDefault(0L)
         sessionActive = false
         contextReady = false
         mainHandler.removeCallbacks(watchdog)
@@ -631,8 +637,15 @@ class CaptureService : Service() {
         starved = false
         suppressed = false
         lastUnique = -1L
+        sessionStartedAt = 0L
         stopForeground(STOP_FOREGROUND_REMOVE)
         EngineState.reset()
+        LogBus.log(
+            "session summary: duration=${durationMs / 1000}s generated=$generated posted=$posted unique=$unique " +
+                "source=${"%.1f".format(sourceFps)} fps output=${"%.1f".format(outputFps)} fps " +
+                "avgLatency=${"%.1f".format(runCatching { NativeBridge.getAverageLatencyMs() }.getOrDefault(0.0))} ms " +
+                "multiplier=$multiplier fp16=$nativeFp16 capture=${captureW}x$captureH",
+        )
         LogBus.log("session stopped")
     }
 
@@ -758,6 +771,14 @@ class CaptureService : Service() {
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val bypassIntent = PendingIntent.getService(
+            this,
+            3,
+            Intent(this, CaptureService::class.java)
+                .setAction(ACTION_SET_BYPASS)
+                .putExtra(EXTRA_BYPASS, !bypass),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_lsfg)
             .setContentTitle("LSFG Mali")
@@ -768,7 +789,17 @@ class CaptureService : Service() {
             .setCategory(Notification.CATEGORY_SERVICE)
             .addAction(
                 Notification.Action.Builder(
-                    android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_pause),
+                    android.graphics.drawable.Icon.createWithResource(
+                        this,
+                        if (bypass) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
+                    ),
+                    if (bypass) "Resume" else "Bypass",
+                    bypassIntent,
+                ).build(),
+            )
+            .addAction(
+                Notification.Action.Builder(
+                    android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
                     "Stop",
                     stopIntent,
                 ).build(),
