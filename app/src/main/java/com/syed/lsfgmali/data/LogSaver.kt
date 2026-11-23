@@ -142,8 +142,17 @@ object LogSaver {
                 if (file.length() <= offset) return@runCatching
                 RandomAccessFile(file, "r").use { raf ->
                     raf.seek(offset)
-                    val text = raf.readBytes().toString(Charsets.UTF_8)
-                    offset = raf.filePointer
+                    val length = (raf.length() - offset).coerceAtMost(256L * 1024L).toInt()
+                    if (length <= 0) return@runCatching
+                    val buffer = ByteArray(length)
+                    var read = 0
+                    while (read < length) {
+                        val n = raf.read(buffer, read, length - read)
+                        if (n <= 0) break
+                        read += n
+                    }
+                    offset += read
+                    val text = String(buffer, 0, read, Charsets.UTF_8)
                     text.split('\n').filter { it.isNotBlank() }.forEach { write("NATIVE  $it") }
                 }
             }

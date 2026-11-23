@@ -71,7 +71,7 @@ object Diagnostics {
             appendLine("  autoDeviceProfile=${settings.autoDeviceProfile} deviceProfileApplied=${settings.deviceProfileApplied}")
             appendLine()
             appendLine("[permissions]")
-            appendLine("  overlay: ${Settings.canDrawOverlays(context)}")
+            appendLine("  overlay: ${android.provider.Settings.canDrawOverlays(context)}")
             appendLine("  accessibility touch bridge: ${com.syed.lsfgmali.service.LsfgTouchService.isReady}")
             appendLine()
             appendLine("[files]")

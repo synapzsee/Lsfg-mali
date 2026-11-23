@@ -724,7 +724,7 @@ private fun AboutCard(gpu: String, android: String, sdk: Int) {
 }
 
 @Composable
-private fun SectionCard(
+internal fun SectionCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     content: @Composable () -> Unit,
