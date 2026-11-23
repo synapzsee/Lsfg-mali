@@ -31,19 +31,6 @@ class LsfgTileService : TileService() {
         updateTile()
     }
 
-    override fun onLongClick() {
-        val snapshot = EngineState.snapshot.value
-        if (!snapshot.running) {
-            openApp()
-            return
-        }
-        runCatching {
-            startService(
-                Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP),
-            )
-        }.onFailure { LogBus.log("quick tile could not stop the session: ${it.message}") }
-    }
-
     private fun updateTile() {
         val tile = qsTile ?: return
         val snapshot = EngineState.snapshot.value
@@ -54,7 +41,7 @@ class LsfgTileService : TileService() {
             else -> "LSFG ${"%.0f".format(snapshot.outputFps)} fps"
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.subtitle = if (snapshot.running) "Tap: bypass · hold: stop" else "Tap to open"
+            tile.subtitle = if (snapshot.running) "Tap to bypass" else "Tap to open"
         }
         runCatching { tile.updateTile() }
     }
@@ -73,7 +60,7 @@ class LsfgTileService : TileService() {
                 startActivityAndCollapse(pending)
             } else {
                 @Suppress("DEPRECATION")
-                startActivityAndCollapse(requestCollapseIntent(intent))
+                startActivityAndCollapse(intent)
             }
         }.onFailure { LogBus.log("quick tile could not open the app: ${it.message}") }
     }
