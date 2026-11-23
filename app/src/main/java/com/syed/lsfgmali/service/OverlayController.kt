@@ -69,6 +69,7 @@ class OverlayController(
     private var starved = false
     private var bypass = false
     private var destroyed = false
+    private var surfaceGeneration = 0
 
     private val overlayType: Int =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -96,10 +97,14 @@ class OverlayController(
     fun rebindOutputSurface() {
         val holder = fullscreen?.holder ?: return
         if (captureW <= 0 || captureH <= 0) return
-        if (holder.surface?.isValid == true) {
-            runCatching { NativeBridge.setOutputSurface(holder.surface, captureW, captureH) }
-                .onFailure { LogBus.log("setOutputSurface failed: ${it.message}") }
+        val surface = holder.surface
+        if (surface == null || !surface.isValid) {
+            LogBus.log("output surface not ready yet (valid=${surface?.isValid}) — waiting for surfaceCreated")
+            return
         }
+        runCatching { NativeBridge.setOutputSurface(surface, captureW, captureH) }
+            .onSuccess { LogBus.log("output surface attached at ${captureW}x$captureH") }
+            .onFailure { LogBus.log("setOutputSurface failed: ${it.message}") }
     }
 
     fun setBypass(value: Boolean) {
@@ -152,18 +157,23 @@ class OverlayController(
     private fun addFullscreen() {
         if (fullscreen != null) return
         val view = SurfaceView(service)
+        val generation = ++surfaceGeneration
         view.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
+                if (generation != surfaceGeneration) return
                 SkipScreenshot.apply(view)
                 rebindOutputSurface()
             }
 
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                if (generation != surfaceGeneration) return
                 rebindOutputSurface()
             }
 
             override fun surfaceDestroyed(holder: SurfaceHolder) {
+                if (generation != surfaceGeneration) return
                 runCatching { NativeBridge.setOutputSurface(null, 0, 0) }
+                LogBus.log("output surface detached (overlay surface destroyed)")
             }
         })
         val params = WindowManager.LayoutParams(
@@ -183,8 +193,11 @@ class OverlayController(
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
-        runCatching { windowManager.addView(view, params) }
-            .onFailure { LogBus.log("overlay add failed: ${it.message}") }
+        val added = runCatching { windowManager.addView(view, params) }.isSuccess
+        if (!added) {
+            LogBus.log("overlay add failed — the output surface will not be shown")
+            return
+        }
         fullscreen = view
     }
 
@@ -217,8 +230,11 @@ class OverlayController(
         ).apply {
             gravity = Gravity.TOP or Gravity.START
         }
-        runCatching { windowManager.addView(view, params) }
-            .onFailure { LogBus.log("touch bridge failed: ${it.message}") }
+        if (runCatching { windowManager.addView(view, params) }.isFailure) {
+            LogBus.log("touch bridge add failed — native touch pass-through stays active")
+            forwarder = null
+            return
+        }
         bridge = view
         SkipScreenshot.apply(view)
         applyBridgeTouchable(!suppressed)
@@ -304,8 +320,10 @@ class OverlayController(
                 else -> false
             }
         }
-        runCatching { windowManager.addView(view, params) }
-            .onFailure { LogBus.log("bubble add failed: ${it.message}") }
+        if (runCatching { windowManager.addView(view, params) }.isFailure) {
+            LogBus.log("bubble add failed — the control bubble is not available")
+            return
+        }
         bubble = view
         SkipScreenshot.apply(view)
     }

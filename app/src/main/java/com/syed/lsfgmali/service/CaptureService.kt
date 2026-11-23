@@ -338,6 +338,28 @@ class CaptureService : Service() {
 
         notificationTick++
         if (notificationTick % 5 == 0) updateNotification()
+        if (notificationTick % 30 == 0) logPacingSample()
+    }
+
+    /**
+     * Writes a frame-pacing sample into the session log: how the engine's
+     * posted frames are actually spaced, which is where stutter shows up.
+     */
+    private fun logPacingSample() {
+        val intervals = LongArray(64)
+        val count = runCatching { NativeBridge.getRecentPostIntervalsNs(intervals) }.getOrDefault(0)
+        if (count <= 0) return
+        val values = intervals.take(count).filter { it > 0 }.sorted()
+        if (values.isEmpty()) return
+        val p50 = values[values.size / 2] / 1_000_000.0
+        val p95 = values[(values.size * 95 / 100).coerceAtMost(values.size - 1)] / 1_000_000.0
+        val worst = values.last() / 1_000_000.0
+        LogBus.log(
+            "pacing sample: source=${"%.1f".format(sourceFps)} fps output=${"%.1f".format(outputFps)} fps " +
+                "post-interval p50=${"%.2f".format(p50)} ms p95=${"%.2f".format(p95)} ms max=${"%.2f".format(worst)} ms " +
+                "latency=${"%.1f".format(runCatching { NativeBridge.getAverageLatencyMs() }.getOrDefault(0.0))} ms " +
+                "queue=${"%.1f".format(runCatching { NativeBridge.getAverageQueueMs() }.getOrDefault(0.0))} ms",
+        )
     }
 
     private fun maybeAdaptMultiplier() {

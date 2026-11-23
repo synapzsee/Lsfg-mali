@@ -218,6 +218,9 @@ fun LsfgApp(
             if (engine.running) {
                 item { LiveCard(engine) }
             }
+            if (device.sdkInt >= 34) {
+                item { CaptureHintCard() }
+            }
             item {
                 SetupCard(
                     dllName = settings.dllName,
@@ -282,7 +285,21 @@ fun LsfgApp(
                 )
             }
             item {
-                LogCard(onShareLog = onShareLog)
+                DebugCard(
+                    onShareLog = onShareLog,
+                    onExportLog = {
+                        val ok = LogSaver.exportToDownloads(context)
+                        scope.launch {
+                            snackbar.showSnackbar(
+                                if (ok) "Session log saved to Downloads/LSFGMali" else "Log export failed — see log",
+                            )
+                        }
+                    },
+                    onCopied = { message -> scope.launch { snackbar.showSnackbar(message) } },
+                )
+            }
+            item {
+                DiagnosticsCard(onCopied = { message -> scope.launch { snackbar.showSnackbar(message) } })
             }
             item {
                 AboutCard(device.gpuShort, device.androidRelease, device.sdkInt)
@@ -351,8 +368,26 @@ private fun HeroCard(
 }
 
 @Composable
-private fun LiveCard(engine: com.syed.lsfgmali.data.EngineSnapshot) {
-    SectionCard(icon = Icons.Filled.Tune, title = "Live engine") {
+private fun CaptureHintCard() {
+    SectionCard(icon = Icons.Filled.Info, title = "Avoid the feedback loop") {
+        Text(
+            "When the capture dialog appears, pick the game app instead of \"Entire screen\" " +
+                "(Android 14+ can capture a single app). The generated overlay then cannot be captured " +
+                "back into the generator, which shows up as a smeared or lagging image.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "If the picture smears, bubbles or freezes, this is the first thing to change.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+}
+
+@Composable
+private fun LiveCard(engine: com.syed.lsfgmali.data.EngineSnapshot) {    SectionCard(icon = Icons.Filled.Tune, title = "Live engine") {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Metric("Output", "%.0f".format(engine.outputFps), "fps", Modifier.weight(1f))
             Metric("Source", "%.0f".format(engine.sourceFps), "fps", Modifier.weight(1f))
@@ -667,29 +702,6 @@ private fun DeviceCard(
         )
         if (device.isHelioG85) {
             TextButtonRow(text = "Apply Helio G85 profile", onClick = onApplyG85)
-        }
-    }
-}
-
-@Composable
-private fun LogCard(onShareLog: () -> Unit) {
-    val context = LocalContext.current
-    SectionCard(icon = Icons.Filled.BugReport, title = "Diagnostics") {
-        Text(
-            "Every session writes a rotating log with the engine counters and device info. Share it if something fails.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onShareLog) {
-                Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Share latest")
-            }
-            OutlinedButton(onClick = { LogSaver.shareLatest(context) }) {
-                Text(if (LogSaver.isRunning) "Saving on" else "Saving off")
-            }
         }
     }
 }
