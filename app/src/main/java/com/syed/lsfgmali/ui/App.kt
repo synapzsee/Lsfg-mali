@@ -226,7 +226,7 @@ fun LsfgApp(
                     onApplyG85 = {
                         store.applyG85Profile()
                         store.update { it.copy(deviceProfileApplied = true) }
-                        snackbar.showSnackbar("Helio G85 profile applied")
+                        scope.launch { snackbar.showSnackbar("Helio G85 profile applied") }
                     },
                 )
             }
@@ -267,7 +267,7 @@ fun LsfgApp(
                     onApplyG85 = {
                         store.applyG85Profile()
                         store.update { it.copy(deviceProfileApplied = true) }
-                        snackbar.showSnackbar("Helio G85 profile applied")
+                        scope.launch { snackbar.showSnackbar("Helio G85 profile applied") }
                     },
                 )
             }

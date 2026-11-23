@@ -74,7 +74,7 @@ class TouchForwarder(private val onFailure: (String) -> Unit) {
 
     private fun addPointer(id: Int, x: Float, y: Float) {
         val path = Path().apply { moveTo(x, y) }
-        val stroke = GestureDescription.StrokeDescription(path, 0, 1, true)
+        val stroke = GestureDescription.StrokeDescription(path, 0L, 1L, true)
         active[id] = stroke
         lastPoint[id] = PointF(x, y)
     }
@@ -87,7 +87,7 @@ class TouchForwarder(private val onFailure: (String) -> Unit) {
             lineTo(x, y)
         }
         val next = runCatching {
-            previous.continueStroke(path, 0, max(1, (SystemClock.uptimeMillis() - lastDispatch).toInt()), willContinue)
+            previous.continueStroke(path, 0L, max(1L, SystemClock.uptimeMillis() - lastDispatch), willContinue)
         }.getOrNull() ?: return false
         active[id] = next
         lastPoint[id] = PointF(x, y)
@@ -102,7 +102,7 @@ class TouchForwarder(private val onFailure: (String) -> Unit) {
             moveTo(last.x, last.y)
             lineTo(x, y)
         }
-        val final = runCatching { previous.continueStroke(path, 0, 1, false) }.getOrNull() ?: return
+        val final = runCatching { previous.continueStroke(path, 0L, 1L, false) }.getOrNull() ?: return
         active[id] = final
     }
 

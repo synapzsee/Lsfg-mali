@@ -38,7 +38,7 @@ object LogSaver {
         sessionStamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
         partIndex = 0
         current = openPart(ctx)
-        listener = { line -> write("SHELL  $line") }.also { LogBus.addListener(it) }
+        listener = { line: String -> write("SHELL  $line") }.also { LogBus.addListener(it) }
         thread = thread(name = TAG, isDaemon = true) { pump(ctx) }
         LogBus.log("logcat saving ON -> ${current?.absolutePath}")
         prune(ctx)

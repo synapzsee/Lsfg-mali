@@ -11,9 +11,9 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
 import android.view.WindowManager
-import androidx.lifecycle.ViewTreeLifecycleOwner
-import androidx.lifecycle.ViewTreeViewModelStoreOwner
-import androidx.savedstate.ViewTreeSavedStateRegistryOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import android.widget.ImageView
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
@@ -318,9 +318,9 @@ class OverlayController(
         if (suppressed || destroyed) return
         val host = ComposeOverlayHost().also { it.create() }
         val view = ComposeView(service).apply {
-            ViewTreeLifecycleOwner.set(this, host)
-            ViewTreeViewModelStoreOwner.set(this, host)
-            ViewTreeSavedStateRegistryOwner.set(this, host)
+            setViewTreeLifecycleOwner(host)
+            setViewTreeViewModelStoreOwner(host)
+            setViewTreeSavedStateRegistryOwner(host)
             setContent {
                 OverlayPanelRoot(
                     bypass = bypass,
