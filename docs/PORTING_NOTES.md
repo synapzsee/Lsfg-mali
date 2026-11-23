@@ -1543,3 +1543,101 @@ Open puzzle: robustness2 and the core 1.2/1.3 features read 0 under the bundled 
 - 03:54:55 generated=166 posted=332 unique-captures=481, then frozen (rotation back to portrait + game exit at ~03:54:50; starved capture, not a crash — stats lines keep ticking with unchanged counters).
 
 **Confirmed live on this ROM:** skip-screenshot unavailable (NoSuchMethodException) — the F2.15 capture feedback-loop exposure is real on the 10R's ROM; this session's capture stream nevertheless stayed productive throughout. Visual fade not determinable from the log; awaiting Syed's report.
+
+---
+
+## Appendix C — Public port, round 4 (v2.0.6 / v2.0.7, 2026-11-23)
+
+Work done on the public app repo (`synapzsee/Lsfg-mali`) while Syed was away.
+Every item below was verified against upstream sources, not guessed.
+
+### C.1 The `extractShaders rc=-4` crash — root cause found and fixed
+
+The user's log (`lsfgmali-20261124-023542-p0.log`) showed `extractShaders rc=-4`.
+Disassembling `liblsfg-android.so` (capstone + pyelftools) located
+`extract_dll_to_spirv` (0x756412) and its failure path:
+
+```
+extract_dll_to_spirv writes:
+  <cache>/%u.spv          (DXBC -> SPIR-V, resource IDs 255..302)
+  <cache>/fp16/%u.spv     (IDs 304..351, DLL >= 3.2.2.0 only)
+  <cache>/fp32/%u.spv     (IDs 353..400, DLL >= 3.2.2.0 only)
+on mkdir/write failure: LOGE("Failed to write %s") ; return -4
+```
+
+The native **does not create the top-level cache directory** — it only creates
+the `fp16/` and `fp32/` subdirectories. The original app created the cache dir
+itself (`MainActivity.java:427`: `new File(cache).mkdirs()`); the Kotlin port
+dropped that line, so the very first `mkdir("fp16")` failed with ENOENT and
+the extraction aborted with -4. **Fix: `Paths.shaderCacheDir(ctx)` now creates
+`filesDir/shader_cache` (shipped in v2.0.2).**
+
+### C.2 `initContext` return code — rc=+1 is NOT an error
+
+`lsfg_render_loop.cpp:2424` (upstream engine source):
+
+```cpp
+// Tell the caller whether framegen is actually running. If not, Kotlin
+// will keep the overlay up in mirror mode instead of routing the capture
+// through a dead LSFG context.
+return (g.framegenCtxId >= 0) ? kOk : kRenderLoopFramegenDisabled;   // == 1
+```
+
+The port treated any `rc != 0` as fatal and killed the session. **Fix (v2.0.6):
+only `rc < 0` is fatal; `rc > 0` starts a "mirror mode" session (capture-only,
+no frame generation) and says so in the notification, the overlay panel and the
+session summary.** The conservative-profile retry now also only fires on
+`rc < 0`.
+
+### C.3 MediaProjection: one VirtualDisplay per consent on Android 14+
+
+AOSP `MediaProjection.createVirtualDisplay()` (android16-release,
+`frameworks/base/core/java/android/media/projection/MediaProjection.java`):
+
+```
+@throws SecurityException ... (3) If the target SDK is Android 14 (U) and up,
+and if this instance has already taken a recording through #createVirtualDisplay,
+but #stop() wasn't invoked to end the recording.
+```
+
+The port's rotation path called `createVirtualDisplay()` a second time on the
+same consent → **always** `SecurityException` on the user's Android 16, so every
+rotation silently fell back to `resize()`. **Fix (v2.0.6): on API 34+ the
+existing VirtualDisplay is resized in place; the recreate path is kept for
+older releases.** The engine's `preTransform` (F4.10) is what makes the resize
+path correct — F4.9 itself stays retired.
+
+### C.4 Blocking JNI moved off the main thread
+
+`initContext()` creates the Vulkan device and loads the framegen shaders
+(hundreds of ms, sometimes seconds) and `destroyContext()` tears the device
+down; both ran on the main thread → ANR risk. **Fix (v2.0.6): the engine is
+started/restarted/destroyed on the `lsfg-capture` worker thread and the
+session continues in a main-thread callback.**
+
+### C.5 Other correctness fixes in v2.0.6
+
+- `pushFrame()` now uses the producer's `Image.timestamp` instead of
+  `System.nanoTime()` — the original app used `image.getTimestamp()`, and
+  `System.nanoTime()` drifts against the display clock.
+- The native bypass flag outlives a session → `setBypass(false)` is now issued
+  at every session start.
+- Teardown order: the overlay is removed **before** the engine context is
+  destroyed, so the output surface is detached while the context is alive.
+- The hidden overlay is now `INVISIBLE` as well as transparent: ROMs that
+  ignore `SurfaceView` alpha would otherwise keep the last frame over every
+  other app (F4.8).
+- `applyTargetFps()` no longer silently switches the user to adaptive mode.
+- `LogBus` uses a per-thread `SimpleDateFormat` (the shared one was not
+  thread-safe), and the exported log is picked by session markers so the user
+  always gets the file of the session that ran.
+
+### C.6 New in v2.0.7 — live controls in the overlay panel
+
+The bubble panel now carries the settings that used to require leaving the
+game: **target FPS**, **internal multiplier** and **capture resolution**
+(50% / 75% / 100%). A resolution change reconfigures the session in place
+(engine restart + VirtualDisplay resize, overlay stays attached); a
+manual multiplier suppresses the adaptive logic for the rest of the session.
+The panel was compacted (inline labels, 12 dp padding) so it still fits on a
+1080p screen.
