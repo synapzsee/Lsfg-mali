@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LSFG Mali</string>
+    <string name="accessibility_service_label">LSFG Mali touch bridge</string>
+    <string name="accessibility_service_description">Optional touch bridge for ROMs that filter touches over overlays. LSFG Mali uses it only to forward your taps and swipes to the game while frame generation is active. No screen content is read or stored.</string>
+</resources>
