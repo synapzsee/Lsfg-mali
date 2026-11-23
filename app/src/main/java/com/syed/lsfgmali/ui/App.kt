@@ -839,20 +839,38 @@ private data class DllImport(
 
 private fun importDll(context: Context, uri: Uri): DllImport? = runCatching {
     val destination = Paths.dllCopy(context)
+    LogBus.log("DLL import: source uri=$uri")
     val input = context.contentResolver.openInputStream(uri) ?: error("Cannot open the selected file")
     input.use { src ->
         destination.outputStream().use { dst -> src.copyTo(dst) }
     }
+    val bytes = destination.length()
     val sha = Hash.sha256(destination)
     val version = DllVersion.detect(destination)
-    val cache = Paths.shaderCache(context)
+    LogBus.log("DLL copied: ${destination.absolutePath} ($bytes bytes)")
+    LogBus.log("DLL sha256: $sha")
+    LogBus.log("DLL version: ${version ?: "unknown (not a PE image?)"}")
+
+    val cacheDir = Paths.shaderCacheDir(context)
+    val cache = cacheDir.absolutePath
+    LogBus.log("shader cache: $cache (exists=${cacheDir.isDirectory}, writable=${cacheDir.canWrite()})")
+    if (!cacheDir.isDirectory) error("shader cache directory could not be created")
+
     val extracted = NativeBridge.extractShaders(destination.absolutePath, sha, cache)
-    if (extracted != 0) error("extractShaders rc=$extracted")
+    LogBus.log("extractShaders rc=$extracted ${if (extracted == 0) "(ok)" else "(FAILED)"}")
+    if (extracted != 0) {
+        LogBus.log("cache after failure: ${describeCache(cacheDir)}")
+        error("extractShaders rc=$extracted")
+    }
     val probe = NativeBridge.probeShaders(cache)
     if (probe != 0) {
         LogBus.log("probeShaders rc=$probe — the driver rejected a shader variant; frame generation still runs on the FP32 path")
+    } else {
+        LogBus.log("probeShaders rc=0 — every frame-gen shader was accepted")
     }
     val fp16 = runCatching { NativeBridge.isFramegenFp16Supported(cache) }.getOrDefault(false)
+    LogBus.log("cache contents: ${describeCache(cacheDir)}")
+    LogBus.log("FP16 frame-gen shader set present: $fp16")
     val name = displayName(context, uri) ?: destination.name
     LogBus.log(
         "Lossless.dll imported: $name${version?.let { " ($it)" } ?: ""} sha=${sha.take(12)}… " +
@@ -862,6 +880,13 @@ private fun importDll(context: Context, uri: Uri): DllImport? = runCatching {
 }.getOrElse {
     LogBus.log("Lossless.dll import failed: ${it.message}")
     null
+}
+
+private fun describeCache(dir: File): String {
+    val top = dir.listFiles()?.count { it.isFile } ?: 0
+    val fp16 = File(dir, "fp16").listFiles()?.count { it.isFile } ?: 0
+    val fp32 = File(dir, "fp32").listFiles()?.count { it.isFile } ?: 0
+    return "top=$top fp16=$fp16 fp32=$fp32"
 }
 
 private fun displayName(context: Context, uri: Uri): String? = runCatching {

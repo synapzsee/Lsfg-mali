@@ -4,8 +4,15 @@ import android.content.Context
 import java.io.File
 
 object Paths {
-    fun shaderCache(ctx: Context): String =
-        File(ctx.filesDir, "shader_cache").absolutePath
+    /**
+     * The native extractor writes `<cache>/<id>.spv`, `<cache>/fp16/<id>.spv` and
+     * `<cache>/fp32/<id>.spv`; it does not create the top-level directory, so it
+     * must exist before extractShaders() is called.
+     */
+    fun shaderCacheDir(ctx: Context): File =
+        File(ctx.filesDir, "shader_cache").apply { mkdirs() }
+
+    fun shaderCache(ctx: Context): String = shaderCacheDir(ctx).absolutePath
 
     fun dllCopy(ctx: Context): File =
         File(ctx.filesDir, "Lossless.dll")

@@ -203,6 +203,17 @@ class CaptureService : Service() {
             "session start: display ${resources.displayMetrics.widthPixels}x${resources.displayMetrics.heightPixels}, " +
                 "capture ${captureW}x$captureH (scale ${config.scale}), rotation=$currentRotation, dpi=$densityDpi",
         )
+        LogBus.log(
+            "session config: multiplier=$multiplier flow=${config.flow} performance=${config.performance} " +
+                "hdr=${config.hdr} antiArtifacts=${config.antiArtifacts} fp16Requested=${config.fp16} " +
+                "fpsMode=${config.fpsMode} target=${config.targetFps} targetCap=${config.targetCap} " +
+                "adaptive=${config.adaptive} emaAlpha=${config.emaAlpha} outlierRatio=${config.outlierRatio} " +
+                "vsyncSlack=${config.vsyncSlackMs} queueDepth=${config.queueDepth}",
+        )
+        LogBus.log(
+            "session paths: shaderCache=${Paths.shaderCache(this)} dll=${Paths.dllCopy(this).absolutePath} " +
+                "nativeLog=${Paths.nativeLog(this)}",
+        )
 
         val rc = initEngine()
         if (rc != 0) {

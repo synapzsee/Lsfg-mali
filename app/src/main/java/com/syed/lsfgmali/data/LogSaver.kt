@@ -3,9 +3,13 @@ package com.syed.lsfgmali.data
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.Process
 import androidx.core.content.FileProvider
+import com.syed.lsfgmali.BuildConfig
+import java.io.BufferedReader
 import java.io.File
-import java.io.RandomAccessFile
+import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -15,6 +19,10 @@ import kotlin.concurrent.thread
 /**
  * Saves this process's own logcat plus the in-app LogBus lines to a rotating
  * session file, so a user can send back one artifact after a playtest.
+ *
+ * `logcat --pid=<pid>` is unreliable on some Android builds (the stream comes
+ * back empty), so the whole buffer is read and filtered here instead: our own
+ * pid, plus any line that mentions this app's package.
  */
 object LogSaver {
     private const val MAX_PART_BYTES = 8L * 1024 * 1024
@@ -28,6 +36,7 @@ object LogSaver {
     private var partIndex = 0
     private var sessionStamp = ""
     private var listener: ((String) -> Unit)? = null
+    private var logcatMode = "none"
 
     val isRunning: Boolean get() = running.get()
 
@@ -38,6 +47,7 @@ object LogSaver {
         sessionStamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
         partIndex = 0
         current = openPart(ctx)
+        writeHeader(ctx)
         listener = { line: String -> write("SHELL  $line") }.also { LogBus.addListener(it) }
         thread = thread(name = TAG, isDaemon = true) { pump(ctx) }
         LogBus.log("logcat saving ON -> ${current?.absolutePath}")
@@ -57,20 +67,44 @@ object LogSaver {
     }
 
     private fun pump(ctx: Context) {
-        try {
-            val p = ProcessBuilder("logcat", "-v", "threadtime", "--pid=${android.os.Process.myPid()}")
+        val pid = Process.myPid()
+        val pkg = ctx.packageName
+        val process = runCatching {
+            ProcessBuilder("logcat", "-v", "threadtime", "-b", "all")
                 .redirectErrorStream(true)
                 .start()
-            proc = p
-            p.inputStream.bufferedReader().useLines { lines ->
+        }.getOrElse {
+            LogBus.log("logcat could not be started: ${it.message} — only shell lines are captured")
+            return
+        }
+        proc = process
+        logcatMode = "all buffers, filtered to pid $pid"
+        write("LOGCAT  mode=$logcatMode")
+        runCatching {
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            reader.useLines { lines ->
                 for (line in lines) {
                     if (!running.get()) break
-                    write(line)
+                    if (isInteresting(line, pid, pkg)) write(line)
                 }
             }
-        } catch (t: Throwable) {
-            LogBus.log("logcat reader unavailable: ${t.message} (shell log still saved)")
+        }.onFailure {
+            write("LOGCAT  stream ended: ${it.message}")
         }
+    }
+
+    private fun isInteresting(line: String, pid: Int, pkg: String): Boolean {
+        if (line.contains(pkg, ignoreCase = true)) return true
+        val fields = line.split(' ', limit = 6)
+        if (fields.size < 3) return false
+        return fields[2].toIntOrNull() == pid
+    }
+
+    private fun writeHeader(ctx: Context) {
+        val device = DeviceInfo.detect(ctx)
+        write("=== LSFGMali session log $sessionStamp part $partIndex (pid ${Process.myPid()}, app ${BuildConfig.VERSION_NAME}) ===")
+        write("=== device: ${device.manufacturer} ${device.model} · ${device.soc.ifBlank { "SoC?" }} · GPU ${device.gpuShort} · Android ${device.androidRelease} (SDK ${device.sdkInt}) · ${device.abi} ===")
+        write("=== engine native log: ${Paths.nativeLog(ctx)} · crash file: ${Paths.crashFile(ctx)} ===")
     }
 
     private fun openPart(ctx: Context): File {
@@ -89,6 +123,7 @@ object LogSaver {
                 partIndex++
                 f = openPart(ctx)
                 current = f
+                writeHeader(ctx)
             }
             f.appendText(line + "\n")
         }
@@ -131,5 +166,4 @@ object LogSaver {
                 ?.forEach { it.delete() }
         }
     }
-
 }
