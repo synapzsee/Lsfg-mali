@@ -177,7 +177,6 @@ private fun Stat(label: String, value: String, unit: String, modifier: Modifier 
 
 @Composable
 fun OverlayPanelRoot(
-    bypass: Boolean,
     onBypass: (Boolean) -> Unit,
     onTarget: (Int) -> Unit,
     onStop: () -> Unit,
@@ -189,7 +188,7 @@ fun OverlayPanelRoot(
         Surface(color = Color.Transparent) {
             OverlayPanel(
                 snapshot = snapshot,
-                bypass = bypass,
+                bypass = snapshot.bypass,
                 onBypass = onBypass,
                 onTarget = onTarget,
                 onStop = onStop,

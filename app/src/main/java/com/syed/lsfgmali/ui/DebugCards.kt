@@ -82,6 +82,7 @@ fun DebugCard(
                     if (visible.isEmpty()) {
                         Text("no log lines yet", style = MaterialTheme.typography.labelSmall)
                     } else {
+                        val lineScroll = rememberScrollState()
                         visible.forEach { line ->
                             Text(
                                 line,
@@ -89,7 +90,7 @@ fun DebugCard(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 10.sp,
                                 ),
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                modifier = Modifier.horizontalScroll(lineScroll),
                             )
                         }
                     }

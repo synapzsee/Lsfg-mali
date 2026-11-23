@@ -65,6 +65,7 @@ class CaptureService : Service() {
     private var suppressed = false
     private var bypass = false
     private var nativeFp16 = false
+    private var mirrorMode = false
 
     private var lastUnique = -1L
     private var lastAdvance = 0L
@@ -90,6 +91,16 @@ class CaptureService : Service() {
                     LogBus.log("screen capture revoked by the system — stopping")
                     teardown()
                     stopSelf()
+                }
+            }
+        }
+
+        /** Android 14+ tells us when the captured content changed its size. */
+        override fun onCapturedContentResize(width: Int, height: Int) {
+            mainHandler.post {
+                if (!tornDown && sessionActive) {
+                    LogBus.log("captured content resized to ${width}x$height")
+                    onRotationPossiblyChanged("capturedContent")
                 }
             }
         }
@@ -221,15 +232,34 @@ class CaptureService : Service() {
                 "nativeLog=${Paths.nativeLog(this)}",
         )
 
-        val rc = initEngine()
-        if (rc != 0) {
+        ioThread = HandlerThread("lsfg-capture").also { it.start() }
+        ioHandler = Handler(ioThread!!.looper)
+        val worker = ioHandler!!
+        // initContext() creates the Vulkan device and loads the framegen shaders, which
+        // blocks for hundreds of milliseconds — keep it off the main thread.
+        worker.post {
+            val rc = initEngine()
+            mainHandler.post { onEngineStarted(rc) }
+        }
+    }
+
+    /** Continues the session once the engine finished starting on the worker thread. */
+    private fun onEngineStarted(rc: Int) {
+        if (tornDown) return
+        if (rc < 0) {
             fail("INIT FAILED rc=$rc — engine did not start. Try Stock driver or a different capture scale.")
             return
         }
-
-        ioThread = HandlerThread("lsfg-capture").also { it.start() }
-        ioHandler = Handler(ioThread!!.looper)
-        val reader = createReader(captureW, captureH, ioHandler!!)
+        mirrorMode = rc > 0
+        if (mirrorMode) {
+            LogBus.log("frame generation is unavailable on this device — running in mirror mode (raw capture only)")
+        }
+        val handler = ioHandler
+        if (handler == null) {
+            fail("Capture thread disappeared while starting")
+            return
+        }
+        val reader = createReader(captureW, captureH, handler)
         imageReader = reader
         val vd = createVirtualDisplay(reader)
         if (vd == null) {
@@ -237,6 +267,9 @@ class CaptureService : Service() {
             return
         }
         virtualDisplay = vd
+        // The native bypass flag outlives a session, so reset it on every start.
+        bypass = false
+        runCatching { NativeBridge.setBypass(false) }
         applyVsync()
         registerDisplayListener()
 
@@ -262,18 +295,19 @@ class CaptureService : Service() {
                 phase = SessionPhase.RUNNING,
                 running = true,
                 starved = false,
-                message = "Running",
+                message = if (mirrorMode) "Mirror mode — frame generation unavailable" else "Running",
                 error = null,
                 captureW = captureW,
                 captureH = captureH,
                 multiplier = multiplier,
                 targetFps = config.targetCap,
                 fp16 = nativeFp16,
+                bypass = false,
             )
         }
         LogBus.log(
             "capture running — switch to your game. multiplier=$multiplier target=${config.targetCap} " +
-                "fp16=$nativeFp16 quality=${config.performance} flow=${config.flow}",
+                "fp16=$nativeFp16 quality=${config.performance} flow=${config.flow} mirror=$mirrorMode",
         )
     }
 
@@ -326,7 +360,11 @@ class CaptureService : Service() {
                 phase = if (starved) SessionPhase.STARVED else SessionPhase.RUNNING,
                 running = true,
                 starved = starved,
-                message = if (starved) "Waiting for new frames" else "Running",
+                message = when {
+                    starved -> "Waiting for new frames"
+                    mirrorMode -> "Mirror mode — frame generation unavailable"
+                    else -> "Running"
+                },
                 captureW = captureW,
                 captureH = captureH,
                 multiplier = multiplier,
@@ -399,14 +437,28 @@ class CaptureService : Service() {
         reconfiguring = true
         contextReady = false
         LogBus.log("adaptive: source ${"%.1f".format(sourceFps)} fps, multiplier $previous -> $newMultiplier (target ${config.targetFps})")
-        runCatching { NativeBridge.destroyContext() }
         multiplier = newMultiplier
-        val rc = initEngine()
-        if (rc != 0) {
+        val worker = ioHandler
+        if (worker == null) {
+            reconfiguring = false
+            fail("Capture thread disappeared while adapting the multiplier")
+            return
+        }
+        worker.post {
+            runCatching { NativeBridge.destroyContext() }
+            val rc = initEngine()
+            mainHandler.post { onEngineRestarted(rc) }
+        }
+    }
+
+    private fun onEngineRestarted(rc: Int) {
+        if (tornDown) return
+        if (rc < 0) {
             reconfiguring = false
             fail("Engine restart failed (rc=$rc) while adapting the multiplier")
             return
         }
+        mirrorMode = rc > 0
         multiplierChanges++
         overlay?.rebindOutputSurface()
         lastUnique = -1L
@@ -423,7 +475,10 @@ class CaptureService : Service() {
         val fp16 = config.fp16 && runCatching { NativeBridge.isFramegenFp16Supported(cache) }.getOrDefault(false)
         nativeFp16 = fp16
         var rc = initContextCall(cache, fp16, config.performance, config.targetCap, config.queueDepth)
-        if (rc != 0 && !initRetried) {
+        // Only a negative code means the engine failed to start. A positive code is
+        // kRenderLoopFramegenDisabled: the render loop runs, but without frame
+        // generation (capture-only mirror mode).
+        if (rc < 0 && !initRetried) {
             initRetried = true
             LogBus.log("engine init failed rc=$rc — retrying with the conservative profile")
             runCatching { NativeBridge.destroyContext() }
@@ -434,6 +489,8 @@ class CaptureService : Service() {
                 "engine initialised: ${captureW}x$captureH ${multiplier}x flow=${config.flow} " +
                     "fp16=$fp16 target=${config.targetCap} queue=${config.queueDepth}",
             )
+        } else if (rc > 0) {
+            LogBus.log("initContext rc=$rc — frame generation disabled, capture-only mirror mode")
         } else {
             LogBus.log("initContext failed rc=$rc")
         }
@@ -479,7 +536,9 @@ class CaptureService : Service() {
                 if (contextReady) {
                     val buffer = image.hardwareBuffer
                     if (buffer != null) {
-                        runCatching { NativeBridge.pushFrame(buffer, System.nanoTime()) }
+                        // The producer's timestamp keeps the engine's pacing in sync with
+                        // the display; System.nanoTime() would drift against it.
+                        runCatching { NativeBridge.pushFrame(buffer, image.timestamp) }
                             .onFailure { error ->
                                 val now = SystemClock.elapsedRealtime()
                                 if (now - lastPushErrorLog > 5000L) {
@@ -557,40 +616,58 @@ class CaptureService : Service() {
         runCatching { oldVd?.setSurface(null) }
         runCatching { imageReader?.close() }
         imageReader = null
-        runCatching { NativeBridge.destroyContext() }
 
         captureW = newW
         captureH = newH
         currentRotation = rotation
-        val rc = initEngine()
-        if (rc != 0) {
-            reconfiguring = false
-            fail("INIT FAILED rc=$rc after rotation — engine did not restart")
-            return
-        }
-        val handler = ioHandler
-        if (handler == null) {
+        val worker = ioHandler
+        if (worker == null) {
             reconfiguring = false
             fail("Capture thread disappeared during reconfigure")
             return
         }
-        val reader = createReader(newW, newH, handler)
+        worker.post {
+            runCatching { NativeBridge.destroyContext() }
+            val rc = initEngine()
+            mainHandler.post { onReconfigured(rc, worker) }
+        }
+    }
+
+    private fun onReconfigured(rc: Int, worker: Handler) {
+        if (tornDown) return
+        if (rc < 0) {
+            reconfiguring = false
+            fail("INIT FAILED rc=$rc after rotation — engine did not restart")
+            return
+        }
+        mirrorMode = rc > 0
+        val reader = createReader(captureW, captureH, worker)
         imageReader = reader
-        val newVd = createVirtualDisplay(reader)
+        val oldVd = virtualDisplay
+        // Android 14+ allows only one VirtualDisplay per MediaProjection consent:
+        // a second createVirtualDisplay() throws SecurityException, so the existing
+        // display is resized instead.
+        val mayRecreate = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+        val newVd = if (mayRecreate) createVirtualDisplay(reader) else null
         if (newVd != null) {
             runCatching { oldVd?.release() }
             virtualDisplay = newVd
-            LogBus.log("virtual display recreated at ${newW}x$newH")
+            LogBus.log("virtual display recreated at ${captureW}x$captureH")
         } else {
             runCatching {
-                oldVd?.resize(newW, newH, densityDpi)
+                oldVd?.resize(captureW, captureH, densityDpi)
                 oldVd?.setSurface(reader.surface)
+            }.onFailure {
+                LogBus.log("virtual display resize failed: ${it.message}")
             }
             virtualDisplay = oldVd
-            LogBus.log("virtual display resized at ${newW}x$newH")
+            LogBus.log(
+                "virtual display resized at ${captureW}x$captureH" +
+                    if (mayRecreate) "" else " (Android 14+ allows one virtual display per consent)",
+            )
         }
         applyVsync()
-        overlay?.onGeometryChanged(newW, newH)
+        overlay?.onGeometryChanged(captureW, captureH)
         overlay?.rebindOutputSurface()
         lastUnique = -1L
         lastAdvance = SystemClock.elapsedRealtime()
@@ -634,6 +711,7 @@ class CaptureService : Service() {
         val generated = runCatching { NativeBridge.getGeneratedFrameCount() }.getOrDefault(0L)
         val posted = runCatching { NativeBridge.getPostedFrameCount() }.getOrDefault(0L)
         val unique = runCatching { NativeBridge.getUniqueCaptureCount() }.getOrDefault(0L)
+        val latency = runCatching { NativeBridge.getAverageLatencyMs() }.getOrDefault(0.0)
         sessionActive = false
         contextReady = false
         mainHandler.removeCallbacks(watchdog)
@@ -643,12 +721,19 @@ class CaptureService : Service() {
         virtualDisplay = null
         runCatching { imageReader?.close() }
         imageReader = null
-        runCatching { NativeBridge.destroyContext() }
+        // Drop the overlay before the engine so the output surface is detached
+        // while the context is still alive.
+        overlay?.destroy()
+        overlay = null
+        val worker = ioHandler
+        if (worker != null) {
+            worker.post { runCatching { NativeBridge.destroyContext() } }
+        } else {
+            runCatching { NativeBridge.destroyContext() }
+        }
         ioThread?.quitSafely()
         ioThread = null
         ioHandler = null
-        overlay?.destroy()
-        overlay = null
         runCatching { projection?.unregisterCallback(projectionCallback) }
         runCatching { projection?.stop() }
         projection = null
@@ -661,8 +746,8 @@ class CaptureService : Service() {
         LogBus.log(
             "session summary: duration=${durationMs / 1000}s generated=$generated posted=$posted unique=$unique " +
                 "source=${"%.1f".format(sourceFps)} fps output=${"%.1f".format(outputFps)} fps " +
-                "avgLatency=${"%.1f".format(runCatching { NativeBridge.getAverageLatencyMs() }.getOrDefault(0.0))} ms " +
-                "multiplier=$multiplier fp16=$nativeFp16 capture=${captureW}x$captureH",
+                "avgLatency=${"%.1f".format(latency)} ms " +
+                "multiplier=$multiplier fp16=$nativeFp16 capture=${captureW}x$captureH mirror=$mirrorMode",
         )
         LogBus.log("session stopped")
     }
@@ -684,8 +769,9 @@ class CaptureService : Service() {
 
     private fun applyTargetFps(fps: Int) {
         val value = fps.coerceIn(15, 144)
-        config = config.copy(fpsMode = FpsMode.TARGET, targetFps = value, adaptive = true)
-        SettingsStore.get(this).update { it.copy(fpsMode = FpsMode.TARGET, targetFps = value, adaptive = true) }
+        // Keep the user's adaptive choice untouched — only the target changes.
+        config = config.copy(fpsMode = FpsMode.TARGET, targetFps = value)
+        SettingsStore.get(this).update { it.copy(fpsMode = FpsMode.TARGET, targetFps = value) }
         EngineState.update { it.copy(targetFps = value) }
         runCatching {
             NativeBridge.setPacingParams(
@@ -769,10 +855,11 @@ class CaptureService : Service() {
         } else {
             "Running · ${multiplier}× · ${captureW}×$captureH"
         }
+        val prefix = if (mirrorMode) "Mirror mode · " else ""
         runCatching {
             getSystemService(NotificationManager::class.java).notify(
                 NOTIFICATION_ID,
-                buildNotification(if (bypass) "Bypass on · $text" else text),
+                buildNotification(if (bypass) "Bypass on · $prefix$text" else "$prefix$text"),
             )
         }
     }

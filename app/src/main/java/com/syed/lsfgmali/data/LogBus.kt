@@ -13,14 +13,14 @@ import kotlinx.coroutines.flow.update
 /** In-process log fan-out: UI state, session file writer, and logcat. */
 object LogBus {
     private const val MAX_LINES = 600
-    private val fmt = SimpleDateFormat("HH:mm:ss", Locale.US)
+    private val fmt = ThreadLocal.withInitial { SimpleDateFormat("HH:mm:ss", Locale.US) }
     private val listeners = CopyOnWriteArrayList<(String) -> Unit>()
 
     private val _lines = MutableStateFlow<List<String>>(emptyList())
     val lines: StateFlow<List<String>> = _lines.asStateFlow()
 
     fun log(msg: String) {
-        val line = "${fmt.format(Date())}  $msg"
+        val line = "${fmt.get()?.format(Date())}  $msg"
         _lines.update { old -> (old + line).takeLast(MAX_LINES) }
         listeners.forEach { l -> runCatching { l(line) } }
         Log.i(TAG, msg)

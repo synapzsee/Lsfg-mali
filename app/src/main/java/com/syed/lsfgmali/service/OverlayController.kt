@@ -185,6 +185,7 @@ class OverlayController(
 
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
                 if (generation != surfaceGeneration) return
+                LogBus.log("overlay surface ${width}x$height (capture ${captureW}x$captureH)")
                 rebindOutputSurface()
             }
 
@@ -359,7 +360,6 @@ class OverlayController(
             setViewTreeSavedStateRegistryOwner(host)
             setContent {
                 OverlayPanelRoot(
-                    bypass = bypass,
                     onBypass = {
                         bypass = it
                         callbacks.onBypassChange(it)
@@ -402,7 +402,13 @@ class OverlayController(
     }
 
     private fun applyVisibility() {
-        fullscreen?.alpha = if (suppressed || starved) 0f else 1f
+        val hidden = suppressed || starved
+        fullscreen?.let { view ->
+            view.alpha = if (hidden) 0f else 1f
+            // Alpha alone is ignored by some ROMs, which then leaves the last frame
+            // over every other app (F4.8). INVISIBLE also drops the surface.
+            view.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
+        }
         bubble?.visibility = if (suppressed) View.GONE else View.VISIBLE
         if (suppressed) hidePanel()
         applyBridgeTouchable(!suppressed)

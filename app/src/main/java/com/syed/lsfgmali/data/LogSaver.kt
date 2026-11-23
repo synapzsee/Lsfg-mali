@@ -211,10 +211,28 @@ object LogSaver {
     @Volatile
     private var appContext: Context? = null
 
-    fun latest(ctx: Context): File? =
-        Paths.logsDir(ctx).listFiles()
+    /**
+     * The newest session file. A file that carries a session marker wins over a
+     * newer empty file, so the user always gets the log of the session that ran.
+     */
+    fun latest(ctx: Context): File? {
+        val files = Paths.logsDir(ctx).listFiles()
             ?.filter { it.isFile && it.name.endsWith(".log") }
-            ?.maxByOrNull { it.lastModified() }
+            ?: return null
+        if (files.isEmpty()) return null
+        val marked = files.filter { hasSessionMarker(it) }
+        return (marked.ifEmpty { files }).maxByOrNull { it.lastModified() }
+    }
+
+    private fun hasSessionMarker(file: File): Boolean = runCatching {
+        file.useLines { lines ->
+            lines.take(400).any { line ->
+                line.contains("=== LSFGMali session log") ||
+                    line.contains("session start:") ||
+                    line.contains("capture running")
+            }
+        }
+    }.getOrDefault(false)
 
     fun shareLatest(ctx: Context) {
         val f = latest(ctx) ?: run {
