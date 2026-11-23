@@ -685,6 +685,7 @@ class CaptureService : Service() {
     private fun applyBypass(enabled: Boolean) {
         bypass = enabled
         overlay?.setBypass(enabled)
+        EngineState.update { it.copy(bypass = enabled) }
         runCatching { NativeBridge.setBypass(enabled) }
         LogBus.log(if (enabled) "frame generation bypassed" else "frame generation resumed")
         updateNotification()
@@ -866,11 +867,13 @@ class CaptureService : Service() {
         }
 
         fun setBypass(context: Context, bypass: Boolean) {
-            context.startService(
-                Intent(context, CaptureService::class.java)
-                    .setAction(ACTION_SET_BYPASS)
-                    .putExtra(EXTRA_BYPASS, bypass),
-            )
+            runCatching {
+                context.startService(
+                    Intent(context, CaptureService::class.java)
+                        .setAction(ACTION_SET_BYPASS)
+                        .putExtra(EXTRA_BYPASS, bypass),
+                )
+            }.onFailure { LogBus.log("could not toggle bypass: ${it.message}") }
         }
 
         fun setBubble(context: Context, show: Boolean) {

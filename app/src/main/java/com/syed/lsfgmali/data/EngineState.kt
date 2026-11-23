@@ -19,6 +19,7 @@ data class EngineSnapshot(
     val multiplier: Int = 2,
     val targetFps: Int = 0,
     val fp16: Boolean = false,
+    val bypass: Boolean = false,
     val generated: Long = 0,
     val posted: Long = 0,
     val uniqueCaptures: Long = 0,
